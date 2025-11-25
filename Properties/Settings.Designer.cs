@@ -22,5 +22,17 @@ namespace whisper_windows.Properties {
                 return defaultInstance;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string EncryptedToken {
+            get {
+                return ((string)(this["EncryptedToken"]));
+            }
+            set {
+                this["EncryptedToken"] = value;
+            }
+        }
     }
 }
