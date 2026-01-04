@@ -38,6 +38,7 @@
             this.flowLayoutPanel1 = new System.Windows.Forms.FlowLayoutPanel();
             this.label1 = new System.Windows.Forms.Label();
             this.fileSystemWatcher1 = new System.IO.FileSystemWatcher();
+            this.settingsButton = new System.Windows.Forms.Button();
             this.flowLayoutPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.fileSystemWatcher1)).BeginInit();
             this.SuspendLayout();
@@ -80,6 +81,20 @@
             this.flowLayoutPanel1.Size = new System.Drawing.Size(159, 54);
             this.flowLayoutPanel1.TabIndex = 4;
             // 
+            // 
+            // settingsButton
+            // 
+            this.settingsButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.settingsButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.settingsButton.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
+            this.settingsButton.Location = new System.Drawing.Point(346, 8);
+            this.settingsButton.Name = "settingsButton";
+            this.settingsButton.Size = new System.Drawing.Size(30, 30);
+            this.settingsButton.TabIndex = 5;
+            this.settingsButton.Text = "⚙";
+            this.settingsButton.UseVisualStyleBackColor = true;
+            this.settingsButton.Click += new System.EventHandler(this.settingsButton_Click);
+            // 
             // label1
             // 
             this.label1.AutoSize = true;
@@ -101,6 +116,7 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(384, 161);
             this.Controls.Add(this.flowLayoutPanel1);
+            this.Controls.Add(this.settingsButton);
             this.Controls.Add(this.textBox1);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "Form1";
@@ -120,5 +136,6 @@
         private FlowLayoutPanel flowLayoutPanel1;
         private Label label1;
         private FileSystemWatcher fileSystemWatcher1;
+        private Button settingsButton;
     }
 }

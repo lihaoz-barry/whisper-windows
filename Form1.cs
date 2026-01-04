@@ -58,6 +58,10 @@ namespace whisper_windows
         private AudioFileReader audioFileReader = null;
         private string outputFileName = "recorded.wav";
         private Boolean isRecording ;
+        
+        // 系统托盘
+        private NotifyIcon trayIcon;
+        private ContextMenuStrip trayMenu;
         public Form1()
         {
             InitializeComponent();
@@ -74,7 +78,108 @@ namespace whisper_windows
 
             this.Controls.Add(textBox1);
 
+            
+            // 初始化系统托盘
+            InitializeTrayIcon();
+            
+            // 检查 Token 是否配置（首次运行）
+            CheckTokenConfiguration();
         }
+
+        private void InitializeTrayIcon()
+        {
+            // 创建托盘图标
+            trayIcon = new NotifyIcon();
+            trayIcon.Icon = this.Icon; // 使用窗体图标
+            trayIcon.Text = "Whisper Windows";
+            trayIcon.Visible = true;
+            
+            // 双击托盘图标显示/隐藏窗口
+            trayIcon.DoubleClick += (s, e) => {
+                if (this.Visible)
+                {
+                    this.Hide();
+                }
+                else
+                {
+                    this.Show();
+                    this.WindowState = FormWindowState.Normal;
+                    this.Activate();
+                }
+            };
+            
+            // 创建托盘菜单
+            trayMenu = new ContextMenuStrip();
+            
+            var showItem = new ToolStripMenuItem("显示主窗口");
+            showItem.Click += (s, e) => {
+                this.Show();
+                this.WindowState = FormWindowState.Normal;
+                this.Activate();
+            };
+            
+            var settingsItem = new ToolStripMenuItem("设置...");
+            settingsItem.Click += (s, e) => OpenSettings();
+            
+            var exitItem = new ToolStripMenuItem("退出");
+            exitItem.Click += (s, e) => {
+                trayIcon.Visible = false;
+                Application.Exit();
+            };
+            
+            trayMenu.Items.Add(showItem);
+            trayMenu.Items.Add(settingsItem);
+            trayMenu.Items.Add(new ToolStripSeparator());
+            trayMenu.Items.Add(exitItem);
+            
+            trayIcon.ContextMenuStrip = trayMenu;
+        }
+        
+        private void CheckTokenConfiguration()
+        {
+            if (!TokenManager.IsTokenConfigured())
+            {
+                var result = MessageBox.Show(
+                    "欢迎使用 Whisper Windows！\n\n" +
+                    "请先配置您的 OpenAI API Token 才能使用语音转录功能。\n\n" +
+                    "是否现在配置？",
+                    "欢迎",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Information);
+                    
+                if (result == DialogResult.Yes)
+                {
+                    OpenSettings();
+                }
+            }
+        }
+        
+        private void OpenSettings()
+        {
+            using (var settingsForm = new SettingsForm())
+            {
+                settingsForm.ShowDialog(this);
+            }
+        }
+        
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // 关闭窗口时最小化到托盘而不是退出
+            if (e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                this.Hide();
+                
+                // 显示提示
+                trayIcon.ShowBalloonTip(3000, 
+                    "Whisper Windows", 
+                    "应用已最小化到系统托盘，双击托盘图标可重新打开", 
+                    ToolTipIcon.Info);
+            }
+            base.OnFormClosing(e);
+        }
+
+
 
 
         protected override void WndProc(ref Message m)
@@ -151,6 +256,13 @@ namespace whisper_windows
         }
         private void StartRecording()
         {
+            // 检查 Token 是否配置
+            if (!TokenManager.IsTokenConfigured())
+            {
+                MessageBox.Show("请先在设置中配置 API Token", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            
             waveSource = new WaveIn();
             waveSource.WaveFormat = new WaveFormat(44100, 1); // CD quality audio
 
@@ -256,16 +368,12 @@ namespace whisper_windows
         {
             using (var client = new HttpClient())
             {
-                // SECURITY: Read API key from environment variable
-                // Set environment variable: setx OPENAI_API_KEY "your-api-key-here"
-                string apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+                // 获取存储的 Token
+                string apiKey = TokenManager.GetDecryptedToken();
 
                 if (string.IsNullOrEmpty(apiKey))
                 {
-                    MessageBox.Show("API Key not found. Please set OPENAI_API_KEY environment variable.\n\n" +
-                                  "Open PowerShell and run:\n" +
-                                  "setx OPENAI_API_KEY \"your-api-key-here\"",
-                                  "Configuration Error",
+                    MessageBox.Show("API Token 未配置，请在设置中配置", "错误",
                                   MessageBoxButtons.OK,
                                   MessageBoxIcon.Error);
                     return;
@@ -363,5 +471,11 @@ namespace whisper_windows
                 Console.WriteLine("TextBox is null or text is empty."); // 在控制台输出错误信息
             }
         }
+
+        private void settingsButton_Click(object sender, EventArgs e)
+        {
+            OpenSettings();
+        }
+
     }
 }

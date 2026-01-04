@@ -1,0 +1,80 @@
+﻿git : remote: error: GH013: 
+Repository rule violations 
+found for refs/heads/feature-
+api-token-management.        
+At line:1 char:1
++ git push -u origin 
+feature-api-token-management 
+2>&1 | Out-File -Enco ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: (remote:  
+   error: ...gement.         
+   :String) [], RemoteExc    
+eption
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+remote: 
+remote: - GITHUB PUSH 
+PROTECTION        
+remote:   ———————————————————
+——————————————————————       
+ 
+remote:     Resolve the 
+following violations before 
+pushing again        
+remote: 
+remote:     - Push cannot 
+contain secrets        
+remote: 
+remote:             
+remote:      (?) Learn how 
+to resolve a blocked push    
+    
+remote:      https://docs.git
+hub.com/code-security/secret-
+scanning/working-with-secret-
+scanning-and-push-protection/
+working-with-push-protection-
+from-the-command-line#resolvi
+ng-a-blocked-push        
+remote:             
+remote:             
+remote:       —— OpenAI API 
+Key —————————————————————————
+———————————        
+remote:        locations:    
+    
+remote:          - commit: ed
+d01dd597758b5dc8d2ff9c15ba224
+a5ab86b94        
+remote:            path: 
+FORM1_MODIFICATIONS.md:143   
+     
+remote:             
+remote:        (?) To push, 
+remove secret from commit(s) 
+or follow this URL to allow 
+the secret.        
+remote:        https://github
+.com/lihaoz-barry/whisper-win
+dows/security/secret-scanning
+/unblock-secret/37oOQSY2sPeu4
+AJMw3Sb0KNBUZr        
+remote:             
+remote: 
+remote: 
+To https://github.com/lihaoz-
+barry/whisper-windows.git
+ ! [remote rejected] 
+feature-api-token-management 
+-> 
+feature-api-token-management 
+(push declined due to 
+repository rule violations)
+error: failed to push some 
+refs to 'https://github.com/l
+ihaoz-barry/whisper-windows.g
+it'
