@@ -4,7 +4,6 @@ using System.Windows.Forms;
 using System.Runtime.InteropServices;
 using System.Media;
 using System.Reflection;
-using Microsoft.Toolkit.Uwp.Notifications; // 用于构建 Toast 内容
 
 namespace whisper_windows
 {
