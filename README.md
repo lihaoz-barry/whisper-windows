@@ -38,6 +38,8 @@ Whisper Windows 是一个轻量级的桌面工具，允许用户通过快捷键�
 - 🔔 **系统通知**：完成转录后显示气泡提示和窗口闪烁
 - 🎵 **音效反馈**：录音开始、停止、复制时播放对应音效
 - 📦 **单文件发布**：支持打包为单个可执行文件
+- 🔐 **安全的 API Token 管理** (v0.2.0+)：使用 Windows DPAPI 加密存储个人 API Token，通过设置窗口安全地管理您的凭证
+- 🎯 **系统托盘最小化** (v0.2.0+)：应用可以最小化到系统托盘，双击托盘图标显示/隐藏窗口，方便后台使用
 
 ## 核心功能
 
@@ -72,6 +74,38 @@ Whisper Windows 是一个轻量级的桌面工具，允许用户通过快捷键�
 - 实时计时器显示录音时长
 - 文本框显示转录结果
 - 可视化录音状态
+
+### 5. 安全的 API Token 管理 (v0.2.0+)
+
+使用 **Windows DPAPI** 实现安全的 Token 存储：
+
+- **加密存储**：使用 DPAPI 加密 Token，存储在应用设置中
+- **用户隔离**：每个 Windows 用户的 Token 独立管理
+- **安全验证**：支持 Token 格式验证和 API 连接测试
+- **隐藏显示**：在 UI 中使用掩码显示（如 `sk-proj-***...***`）防止泄露
+
+**Token 管理流程：**
+
+```
+用户输入 Token
+    ↓
+格式验证 (以 sk- 开头，长度 > 20)
+    ↓
+API 验证 (发送测试请求)
+    ↓
+DPAPI 加密
+    ↓
+保存到应用设置
+```
+
+### 6. 系统托盘功能 (v0.2.0+)
+
+应用可以最小化到系统托盘，实现后台运行：
+
+- **双击托盘图标**：显示/隐藏主窗口
+- **后台快捷键**：即使窗口隐藏，Ctrl+M 快捷键仍然有效
+- **节省空间**：减少任务栏占用空间
+- **快速访问**：托盘菜单提供快速操作选项
 
 ## 技术架构
 
@@ -548,23 +582,49 @@ waveSource.DeviceNumber = 1; // 使用第二个设备
 
 ⚠️ **重要安全提醒**
 
-### API Key 管理
+### API Token 管理 (推荐使用 v0.2.0+)
 
-当前版本的 API Key 是硬编码在源代码中的（[`Form1.cs:259`](file:///c:/Users/Barry/source/repos/whisper%20windows/Form1.cs#L259)），这**不是推荐的做法**。
+**版本 0.2.0 及更高版本已实现安全的 Token 管理机制，强烈推荐升级！**
+
+#### ✅ 安全实现（v0.2.0+）
+
+新版本使用 **Windows DPAPI** 加密存储您的 API Token：
+
+1. **启动应用后首次运行**
+   - 应用会检测是否配置了 Token
+   - 如未配置，会提示您打开设置窗口
+
+2. **在设置窗口中配置 Token**
+   - 打开应用 → 点击"设置"按钮
+   - 输入您的 OpenAI API Token
+   - 点击"测试"按钮验证 Token 有效性
+   - 点击"保存"按钮安全保存
+
+3. **Token 安全特性**
+   - 🔐 使用 DPAPI 加密，只有当前用户能解密
+   - 💾 存储在 Windows 应用设置中，不在源代码中
+   - ✅ 支持 Token 格式验证
+   - 🛡️ 支持 API 连接测试
+   - 🙈 UI 中显示掩码形式，防止屏幕录制泄露
+
+**文件位置：** Token 存储在 `%APPDATA%\Roaming\Barry\whisper_windows\` 中的应用设置
+
+#### ⚠️ 旧版本注意事项（v0.1.0）
+
+如果您仍在使用 v0.1.0，请注意：
 
 **风险：**
+- API Key 硬编码在源代码中（[`Form1.cs`](file:///c:/Users/Barry/source/repos/whisper%20windows/Form1.cs)）
 - 如果代码被公开，API Key 可能会被泄露
 - 他人可能使用你的 API Key 产生费用
 - 违反 OpenAI 的使用条款
 
-**推荐做法：**
+**替代方案（如果无法升级）：**
 
-1. **使用环境变量**（推荐）
+1. **使用环境变量**
 
 ```csharp
-// 从环境变量读取 API Key
 string apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
 ```
 
 在 Windows 中设置环境变量：
@@ -572,24 +632,13 @@ client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
 setx OPENAI_API_KEY "your-api-key-here"
 ```
 
-2. **使用配置文件**
-
-创建 `appsettings.json`（记得添加到 `.gitignore`）：
-```json
-{
-  "OpenAI": {
-    "ApiKey": "your-api-key-here"
-  }
-}
-```
+2. **使用配置文件** - 创建 `appsettings.json`（记得添加到 `.gitignore`）
 
 3. **使用 Windows Credential Manager**
 
-使用系统的凭据管理器存储敏感信息。
-
 ### 提交代码前的检查清单
 
-- [ ] 确保 API Key 已从代码中移除
+- [ ] 如果使用 v0.1.0，确保 API Key 已从代码中移除
 - [ ] 检查 `.gitignore` 包含所有敏感文件
 - [ ] 不要提交 `*.user` 和 `.vs/` 文件
 - [ ] 不要提交录音文件（`*.wav`）
@@ -599,6 +648,8 @@ setx OPENAI_API_KEY "your-api-key-here"
 1. 立即前往 [OpenAI API Keys](https://platform.openai.com/api-keys) 撤销该 Key
 2. 生成新的 API Key
 3. 检查你的 OpenAI 账单，确认是否有异常使用
+
+**对于 v0.2.0+ 用户：** 在设置窗口中更新为新的 API Key 即可
 
 ## 故障排除
 
