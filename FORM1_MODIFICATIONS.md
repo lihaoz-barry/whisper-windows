@@ -138,6 +138,10 @@ if (!TokenManager.IsTokenConfigured())
 
 ## 5. 修改 SendAudioToWhisperAPI 方法（第255-259行）
 
+**原代码（第259行）：**
+```csharp
+client.DefaultRequestHeaders.Add("Authorization", "Bearer YOUR_API_KEY_HERE");
+```
 
 **替换为：**
 ```csharp
