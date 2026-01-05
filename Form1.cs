@@ -65,7 +65,7 @@ namespace whisper_windows
         {
             InitializeComponent();
             RegisterHotKey(this.Handle, MYACTION_HOTKEY_ID, 0x2, (int)Keys.M);  // 0x2 代表 Ctrl
-            isRecording = true;
+            isRecording = false;
             // 初始化计时器
             timer1 = new System.Windows.Forms.Timer();
             timer1.Interval = 1000; // 设置时间间隔为1秒
@@ -193,9 +193,28 @@ namespace whisper_windows
         }
         private void ToggleRecording()
         {
+            ToggleRecordingState();
+        }
 
-            button1.PerformClick();
-            isRecording = !isRecording;
+        private void ToggleRecordingState()
+        {
+            if (!timer1.Enabled)
+            {
+                StartRecording();
+                timer1.Start();
+                startTime = DateTime.Now;
+                button1.Text = "Timing...";
+                isRecording = true;
+                PlaySound("whisper_windows.Resources.start.wav");
+            }
+            else
+            {
+                timer1.Stop();
+                StopRecording();
+                button1.Text = "Start Timing";
+                isRecording = false;
+                PlaySound("whisper_windows.Resources.stop.wav");
+            }
         }
 
         private void PlaySound(string soundFile)
@@ -222,24 +241,7 @@ namespace whisper_windows
 
         private void button1_Click(object sender, EventArgs e)
         {
-            if (!timer1.Enabled)
-            {
-                StartRecording();
-                timer1.Start();
-                startTime = DateTime.Now;
-                button1.Text = "Timing...";
-                PlaySound("whisper_windows.Resources.start.wav");
-            }
-            else
-            {
-                timer1.Stop();
-                StopRecording();
-                //this can be re open in the future if want to play the recording
-                //PlayRecording();
-                button1.Text = "Start Timing";
-                PlaySound("whisper_windows.Resources.stop.wav");
-
-            }
+            ToggleRecordingState();
         }
 
         private void timer1_Tick(object sender, EventArgs e)
