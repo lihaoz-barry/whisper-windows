@@ -52,6 +52,11 @@ namespace whisper_windows
             if (outputDirectory == null)
             {
                 outputDirectory = Path.GetDirectoryName(inputFilePath);
+                // Handle case where file is in current directory
+                if (string.IsNullOrWhiteSpace(outputDirectory))
+                {
+                    outputDirectory = Directory.GetCurrentDirectory();
+                }
             }
 
             if (!Directory.Exists(outputDirectory))
@@ -118,27 +123,34 @@ namespace whisper_windows
                 {
                     var waveFormat = reader.WaveFormat;
                     var bytesPerSample = waveFormat.BitsPerSample / 8 * waveFormat.Channels;
-
-                    // Seek to start position
-                    reader.CurrentTime = TimeSpan.FromSeconds((double)startSample / waveFormat.SampleRate);
+                    long bytesToSkip = startSample * bytesPerSample;
 
                     using (var writer = new WaveFileWriter(outputFilePath, waveFormat))
                     {
-                        int bufferSize = waveFormat.SampleRate * bytesPerSample; // 1 second buffer
-                        byte[] buffer = new byte[bufferSize];
-                        long samplesRead = 0;
-
-                        while (samplesRead < sampleCount)
+                        // Skip to start position
+                        byte[] skipBuffer = new byte[65536];
+                        long bytesSkipped = 0;
+                        while (bytesSkipped < bytesToSkip)
                         {
-                            long samplesToRead = Math.Min(bufferSize / bytesPerSample, sampleCount - samplesRead);
-                            int bytesToRead = (int)(samplesToRead * bytesPerSample);
+                            int toRead = (int)Math.Min(skipBuffer.Length, bytesToSkip - bytesSkipped);
+                            int read = reader.Read(skipBuffer, 0, toRead);
+                            if (read == 0) break;
+                            bytesSkipped += read;
+                        }
 
-                            int bytesRead = reader.Read(buffer, 0, bytesToRead);
-                            if (bytesRead == 0)
-                                break;
+                        // Read and write segment
+                        byte[] buffer = new byte[65536];
+                        long bytesWritten = 0;
+                        long targetBytes = sampleCount * bytesPerSample;
 
-                            writer.Write(buffer, 0, bytesRead);
-                            samplesRead += bytesRead / bytesPerSample;
+                        while (bytesWritten < targetBytes)
+                        {
+                            int toRead = (int)Math.Min(buffer.Length, targetBytes - bytesWritten);
+                            int read = reader.Read(buffer, 0, toRead);
+                            if (read == 0) break;
+
+                            writer.Write(buffer, 0, read);
+                            bytesWritten += read;
                         }
                     }
                 }
