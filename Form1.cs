@@ -4,6 +4,12 @@ using System.Windows.Forms;
 using System.Runtime.InteropServices;
 using System.Media;
 using System.Reflection;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.IO;
+using System.Net.Http.Headers;
 
 namespace whisper_windows
 {
@@ -367,9 +373,86 @@ namespace whisper_windows
         }
         private async void SendAudioToWhisperAPI(string filePath)
         {
+            try
+            {
+                // Check if audio needs segmentation
+                if (AudioSegmenter.NeedsSegmentation(filePath))
+                {
+                    await HandleSegmentedAudio(filePath);
+                }
+                else
+                {
+                    await SendSingleAudioSegment(filePath, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to process audio: {ex.Message}", "错误",
+                              MessageBoxButtons.OK,
+                              MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task HandleSegmentedAudio(string filePath)
+        {
+            List<AudioSegment> segments = null;
+            try
+            {
+                // Segment the audio
+                textBox1.Text = "Segmenting audio...";
+                segments = AudioSegmenter.SegmentAudio(filePath);
+
+                if (segments.Count == 0)
+                {
+                    await SendSingleAudioSegment(filePath, null);
+                    return;
+                }
+
+                List<string> allTranscriptions = new List<string>();
+
+                // Process each segment
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    var segment = segments[i];
+                    textBox1.Text = $"Transcribing part {segment.SegmentNumber}/{segment.TotalSegments}...";
+                    this.Refresh();
+
+                    string transcription = await SendSingleAudioSegment(segment.FilePath, segment);
+                    if (!string.IsNullOrEmpty(transcription))
+                    {
+                        allTranscriptions.Add(transcription);
+                    }
+                }
+
+                // Merge results
+                string finalText = string.Join(" ", allTranscriptions);
+                textBox1.Text = finalText;
+                Clipboard.SetText(finalText);
+                PlaySound("whisper_windows.Resources.copy.wav");
+                FlashWindow(this);
+                showBalloonTip(finalText);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to process segmented audio: {ex.Message}", "错误",
+                              MessageBoxButtons.OK,
+                              MessageBoxIcon.Error);
+            }
+            finally
+            {
+                // Cleanup segment files
+                if (segments != null)
+                {
+                    AudioSegmenter.CleanupSegments(segments);
+                }
+            }
+        }
+
+        private async Task<string> SendSingleAudioSegment(string filePath, AudioSegment segment = null)
+        {
             using (var client = new HttpClient())
             {
-                // 获取存储的 Token
+                // Get stored token
                 string apiKey = TokenManager.GetDecryptedToken();
 
                 if (string.IsNullOrEmpty(apiKey))
@@ -377,7 +460,7 @@ namespace whisper_windows
                     MessageBox.Show("API Token 未配置，请在设置中配置", "错误",
                                   MessageBoxButtons.OK,
                                   MessageBoxIcon.Error);
-                    return;
+                    return null;
                 }
 
                 client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
@@ -389,7 +472,6 @@ namespace whisper_windows
                 content.Add(fileContent, "file", Path.GetFileName(filePath));
                 content.Add(new StringContent("whisper-1"), "model");
 
-
                 try
                 {
                     var response = await client.PostAsync("https://api.openai.com/v1/audio/transcriptions", content);
@@ -397,15 +479,25 @@ namespace whisper_windows
 
                     var jsonDocument = System.Text.Json.JsonDocument.Parse(resultText);
                     var text = jsonDocument.RootElement.GetProperty("text").GetString();
-                    textBox1.Text = text;  // Display the transcription
-                    Clipboard.SetText(text);
-                    PlaySound("whisper_windows.Resources.copy.wav");
-                    FlashWindow(this);
-                    showBalloonTip(text);
+
+                    // For single segment, display immediately
+                    if (segment == null)
+                    {
+                        textBox1.Text = text;
+                        Clipboard.SetText(text);
+                        PlaySound("whisper_windows.Resources.copy.wav");
+                        FlashWindow(this);
+                        showBalloonTip(text);
+                    }
+
+                    return text;
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("Failed to send audio: " + ex.Message);
+                    MessageBox.Show($"Failed to transcribe: {ex.Message}", "错误",
+                                  MessageBoxButtons.OK,
+                                  MessageBoxIcon.Error);
+                    return null;
                 }
             }
         }
