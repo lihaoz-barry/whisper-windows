@@ -1,0 +1,92 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build Results
+*.exe
+*.dll
+*.pdb
+
+# NuGet Packages
+*.nupkg
+*.snupkg
+packages/
+*.nuget.props
+*.nuget.targets
+
+# Audio files generated during runtime (exclude embedded resources)
+/*.wav
+/recorded.wav
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# VS Code directories
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+.history/
+.ionide/
+
+# Agent directory (AI assistant)
+.agent/
+
+# Sensitive files (API keys, credentials)
+*.env
+.env.local
+.env.*.local
+appsettings.Development.json
+secrets.json
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Publish profiles
+*.pubxml
+*.publishsettings
+PublishScripts/
+
+# Windows shortcuts
+*.lnk
+claude-here.bat
