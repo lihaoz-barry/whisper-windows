@@ -1,4 +1,4 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
 using System;
 using System.Windows.Forms;
 using System.Runtime.InteropServices;
@@ -10,6 +10,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.IO;
 using System.Net.Http.Headers;
+using System.Drawing;
 
 namespace whisper_windows
 {
@@ -29,7 +30,7 @@ namespace whisper_windows
             public uint dwTimeout;
         }
 
-        // 控制闪烁的常量  
+        // Flash window constants
         private const uint FLASHW_ALL = 3;
         private const uint FLASHW_TIMER = 0x00000004;
         private const uint FLASHW_TIMERNOFG = 0x0000000C;
@@ -63,43 +64,102 @@ namespace whisper_windows
         private AudioFileReader audioFileReader = null;
         private string outputFileName = "recorded.wav";
         private Boolean isRecording ;
-        
-        // 系统托盘
+
+        // System tray
         private NotifyIcon trayIcon;
         private ContextMenuStrip trayMenu;
+
+        // Status management
+        private StatusManager statusManager;
+
         public Form1()
         {
             InitializeComponent();
-            RegisterHotKey(this.Handle, MYACTION_HOTKEY_ID, 0x2, (int)Keys.M);  // 0x2 代表 Ctrl
+            RegisterHotKey(this.Handle, MYACTION_HOTKEY_ID, 0x2, (int)Keys.M);  // 0x2 = Ctrl
             isRecording = false;
-            // 初始化计时器
+            // Initialize timer
             timer1 = new System.Windows.Forms.Timer();
-            timer1.Interval = 1000; // 设置时间间隔为1秒
+            timer1.Interval = 1000;
             timer1.Tick += new EventHandler(timer1_Tick);
 
-            // 初始化按
+            // Initialize button
             button1.Text = "Start";
             textBox1.Click += textBox1_Click;
 
             this.Controls.Add(textBox1);
 
-            
-            // 初始化系统托盘
+            // Initialize status manager
+            InitializeStatusManager();
+
+            // Initialize system tray
             InitializeTrayIcon();
-            
-            // 检查 Token 是否配置（首次运行）
+
+            // Check token configuration (first run)
             CheckTokenConfiguration();
+        }
+
+        private void InitializeStatusManager()
+        {
+            statusManager = new StatusManager();
+            statusManager.StatusChanged += OnStatusChanged;
+
+            // Set initial status display
+            UpdateStatusDisplay(StatusManager.GetStatusInfo(AppStatus.Idle));
+            statusDetailLabel.Text = "按 Ctrl+M 开始录制";
+        }
+
+        private void OnStatusChanged(object sender, StatusChangedEventArgs e)
+        {
+            if (this.InvokeRequired)
+            {
+                this.Invoke(new Action(() => OnStatusChanged(sender, e)));
+                return;
+            }
+
+            var info = StatusManager.GetStatusInfo(e.NewStatus);
+            info.DetailMessage = e.DetailMessage;
+            UpdateStatusDisplay(info);
+
+            // Show/hide progress bar based on status
+            bool showProgress = e.NewStatus == AppStatus.Processing ||
+                               e.NewStatus == AppStatus.Sending ||
+                               e.NewStatus == AppStatus.Transcribing;
+            statusProgressBar.Visible = showProgress;
+
+            // Auto-reset to idle after success
+            if (e.NewStatus == AppStatus.Success)
+            {
+                statusTimer.Start();
+            }
+        }
+
+        private void UpdateStatusDisplay(StatusInfo info)
+        {
+            statusIconLabel.Text = info.Icon;
+            statusTextLabel.Text = info.Text;
+            statusTextLabel.ForeColor = info.Color;
+            statusDetailLabel.Text = info.DetailMessage;
+
+            // Update panel border color based on status
+            statusPanel.BackColor = Color.FromArgb(245, 245, 245);
+        }
+
+        private void statusTimer_Tick(object sender, EventArgs e)
+        {
+            statusTimer.Stop();
+            statusManager.SetIdle();
+            statusDetailLabel.Text = "按 Ctrl+M 开始录制";
         }
 
         private void InitializeTrayIcon()
         {
-            // 创建托盘图标
+            // Create tray icon
             trayIcon = new NotifyIcon();
-            trayIcon.Icon = this.Icon; // 使用窗体图标
+            trayIcon.Icon = this.Icon;
             trayIcon.Text = "Whisper Windows";
             trayIcon.Visible = true;
-            
-            // 双击托盘图标显示/隐藏窗口
+
+            // Double-click tray icon to show/hide window
             trayIcon.DoubleClick += (s, e) => {
                 if (this.Visible)
                 {
@@ -112,34 +172,34 @@ namespace whisper_windows
                     this.Activate();
                 }
             };
-            
-            // 创建托盘菜单
+
+            // Create tray menu
             trayMenu = new ContextMenuStrip();
-            
+
             var showItem = new ToolStripMenuItem("显示主窗口");
             showItem.Click += (s, e) => {
                 this.Show();
                 this.WindowState = FormWindowState.Normal;
                 this.Activate();
             };
-            
+
             var settingsItem = new ToolStripMenuItem("设置...");
             settingsItem.Click += (s, e) => OpenSettings();
-            
+
             var exitItem = new ToolStripMenuItem("退出");
             exitItem.Click += (s, e) => {
                 trayIcon.Visible = false;
                 Application.Exit();
             };
-            
+
             trayMenu.Items.Add(showItem);
             trayMenu.Items.Add(settingsItem);
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add(exitItem);
-            
+
             trayIcon.ContextMenuStrip = trayMenu;
         }
-        
+
         private void CheckTokenConfiguration()
         {
             if (!TokenManager.IsTokenConfigured())
@@ -151,14 +211,14 @@ namespace whisper_windows
                     "欢迎",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Information);
-                    
+
                 if (result == DialogResult.Yes)
                 {
                     OpenSettings();
                 }
             }
         }
-        
+
         private void OpenSettings()
         {
             using (var settingsForm = new SettingsForm())
@@ -166,19 +226,19 @@ namespace whisper_windows
                 settingsForm.ShowDialog(this);
             }
         }
-        
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // 关闭窗口时最小化到托盘而不是退出
+            // Minimize to tray instead of closing
             if (e.CloseReason == CloseReason.UserClosing)
             {
                 e.Cancel = true;
                 this.Hide();
-                
-                // 显示提示
-                trayIcon.ShowBalloonTip(3000, 
-                    "Whisper Windows", 
-                    "应用已最小化到系统托盘，双击托盘图标可重新打开", 
+
+                // Show notification
+                trayIcon.ShowBalloonTip(3000,
+                    "Whisper Windows",
+                    "应用已最小化到系统托盘，双击托盘图标可重新打开",
                     ToolTipIcon.Info);
             }
             base.OnFormClosing(e);
@@ -193,7 +253,7 @@ namespace whisper_windows
 
             if (m.Msg == 0x0312 && m.WParam.ToInt32() == MYACTION_HOTKEY_ID)
             {
-                // 热键被触发
+                // Hotkey triggered
                 ToggleRecording();
             }
         }
@@ -209,15 +269,17 @@ namespace whisper_windows
                 StartRecording();
                 timer1.Start();
                 startTime = DateTime.Now;
-                button1.Text = "Timing...";
+                button1.Text = "Stop";
                 isRecording = true;
+                statusManager.SetRecording();
                 PlaySound("whisper_windows.Resources.start.wav");
             }
             else
             {
                 timer1.Stop();
+                statusManager.SetProcessing("正在停止录制...");
                 StopRecording();
-                button1.Text = "Start Timing";
+                button1.Text = "Start";
                 isRecording = false;
                 PlaySound("whisper_windows.Resources.stop.wav");
             }
@@ -238,7 +300,7 @@ namespace whisper_windows
                     player.Play();
                 }
             }
-                
+
 
         }
 
@@ -253,23 +315,29 @@ namespace whisper_windows
         private void timer1_Tick(object sender, EventArgs e)
         {
             TimeSpan duration = DateTime.Now - startTime;
-            label1.Text = FormatTime(duration);  // 更新Label显示时间
+            label1.Text = FormatTime(duration);
+
+            // Update status detail with recording duration
+            if (isRecording)
+            {
+                statusDetailLabel.Text = $"录制中 {FormatTime(duration)} - 按 Ctrl+M 停止";
+            }
         }
 
-        // 格式化时间为 mm:ss
+        // Format time as mm:ss
         private string FormatTime(TimeSpan duration)
         {
             return string.Format("{0:D2}:{1:D2}", duration.Minutes, duration.Seconds);
         }
         private void StartRecording()
         {
-            // 检查 Token 是否配置
+            // Check token configuration
             if (!TokenManager.IsTokenConfigured())
             {
                 MessageBox.Show("请先在设置中配置 API Token", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            
+
             waveSource = new WaveIn();
             waveSource.WaveFormat = new WaveFormat(44100, 1); // CD quality audio
 
@@ -324,8 +392,8 @@ namespace whisper_windows
             if (waveFile != null)
             {
                 waveFile.Close();
-                waveFile.Dispose();  // 关闭文件并释放资源
-                waveFile = null;     // 将引用设置为null，确保资源可以被垃圾回收
+                waveFile.Dispose();
+                waveFile = null;
             }
             SendAudioToWhisperAPI(outputFileName);
         }
@@ -334,7 +402,7 @@ namespace whisper_windows
         {
             if (audioFileReader != null)
             {
-                audioFileReader.Dispose(); // 释放上一次的资源
+                audioFileReader.Dispose();
             }
             if (waveOut != null)
             {
@@ -375,6 +443,8 @@ namespace whisper_windows
         {
             try
             {
+                statusManager.SetProcessing("正在检查音频文件...");
+
                 // Check if audio needs segmentation
                 if (AudioSegmenter.NeedsSegmentation(filePath))
                 {
@@ -382,11 +452,16 @@ namespace whisper_windows
                 }
                 else
                 {
+                    // Get file size for status display
+                    var fileInfo = new FileInfo(filePath);
+                    statusManager.SetSending(fileInfo.Length);
+
                     await SendSingleAudioSegment(filePath, null);
                 }
             }
             catch (Exception ex)
             {
+                statusManager.SetError($"处理失败: {ex.Message}");
                 MessageBox.Show($"Failed to process audio: {ex.Message}", "错误",
                               MessageBoxButtons.OK,
                               MessageBoxIcon.Error);
@@ -399,11 +474,14 @@ namespace whisper_windows
             try
             {
                 // Segment the audio
-                textBox1.Text = "Segmenting audio...";
+                statusManager.SetProcessing("正在分段音频...");
+                textBox1.Text = "正在分段音频...";
                 segments = AudioSegmenter.SegmentAudio(filePath);
 
                 if (segments.Count == 0)
                 {
+                    var fileInfo = new FileInfo(filePath);
+                    statusManager.SetSending(fileInfo.Length);
                     await SendSingleAudioSegment(filePath, null);
                     return;
                 }
@@ -414,7 +492,8 @@ namespace whisper_windows
                 for (int i = 0; i < segments.Count; i++)
                 {
                     var segment = segments[i];
-                    textBox1.Text = $"Transcribing part {segment.SegmentNumber}/{segment.TotalSegments}...";
+                    statusManager.SetTranscribingSegment(segment.SegmentNumber, segment.TotalSegments);
+                    textBox1.Text = $"正在转录第 {segment.SegmentNumber}/{segment.TotalSegments} 段...";
                     this.Refresh();
 
                     string transcription = await SendSingleAudioSegment(segment.FilePath, segment);
@@ -428,12 +507,14 @@ namespace whisper_windows
                 string finalText = string.Join(" ", allTranscriptions);
                 textBox1.Text = finalText;
                 Clipboard.SetText(finalText);
+                statusManager.SetSuccess("转录完成，已复制到剪贴板");
                 PlaySound("whisper_windows.Resources.copy.wav");
                 FlashWindow(this);
                 showBalloonTip(finalText);
             }
             catch (Exception ex)
             {
+                statusManager.SetError($"分段处理失败: {ex.Message}");
                 MessageBox.Show($"Failed to process segmented audio: {ex.Message}", "错误",
                               MessageBoxButtons.OK,
                               MessageBoxIcon.Error);
@@ -457,6 +538,7 @@ namespace whisper_windows
 
                 if (string.IsNullOrEmpty(apiKey))
                 {
+                    statusManager.SetError("API Token 未配置");
                     MessageBox.Show("API Token 未配置，请在设置中配置", "错误",
                                   MessageBoxButtons.OK,
                                   MessageBoxIcon.Error);
@@ -466,7 +548,8 @@ namespace whisper_windows
                 client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
 
                 var content = new MultipartFormDataContent();
-                var fileContent = new ByteArrayContent(File.ReadAllBytes(filePath));
+                var fileBytes = File.ReadAllBytes(filePath);
+                var fileContent = new ByteArrayContent(fileBytes);
                 fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
 
                 content.Add(fileContent, "file", Path.GetFileName(filePath));
@@ -474,8 +557,36 @@ namespace whisper_windows
 
                 try
                 {
+                    // Update status to sending if single segment
+                    if (segment == null)
+                    {
+                        statusManager.SetSending(fileBytes.Length);
+                    }
+
+                    // Update status to transcribing
+                    statusManager.SetTranscribing();
+
                     var response = await client.PostAsync("https://api.openai.com/v1/audio/transcriptions", content);
                     var resultText = await response.Content.ReadAsStringAsync();
+
+                    // Check for API error response
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorMsg = $"API 返回错误: {response.StatusCode}";
+                        try
+                        {
+                            var errorDoc = System.Text.Json.JsonDocument.Parse(resultText);
+                            if (errorDoc.RootElement.TryGetProperty("error", out var errorElement) &&
+                                errorElement.TryGetProperty("message", out var msgElement))
+                            {
+                                errorMsg = msgElement.GetString();
+                            }
+                        }
+                        catch { }
+
+                        statusManager.SetError(errorMsg);
+                        throw new Exception(errorMsg);
+                    }
 
                     var jsonDocument = System.Text.Json.JsonDocument.Parse(resultText);
                     var text = jsonDocument.RootElement.GetProperty("text").GetString();
@@ -485,6 +596,7 @@ namespace whisper_windows
                     {
                         textBox1.Text = text;
                         Clipboard.SetText(text);
+                        statusManager.SetSuccess("转录完成，已复制到剪贴板");
                         PlaySound("whisper_windows.Resources.copy.wav");
                         FlashWindow(this);
                         showBalloonTip(text);
@@ -494,6 +606,10 @@ namespace whisper_windows
                 }
                 catch (Exception ex)
                 {
+                    if (segment == null)
+                    {
+                        statusManager.SetError($"转录失败: {ex.Message}");
+                    }
                     MessageBox.Show($"Failed to transcribe: {ex.Message}", "错误",
                                   MessageBoxButtons.OK,
                                   MessageBoxIcon.Error);
@@ -505,15 +621,15 @@ namespace whisper_windows
         private void showBalloonTip(string translatedText)
         {
             NotifyIcon notifyIcon = new NotifyIcon();
-            notifyIcon.Icon = SystemIcons.Information; // 设置图标  
+            notifyIcon.Icon = SystemIcons.Information;
             notifyIcon.Visible = true;
 
-            // 显示气泡提示  
+            // Show balloon tip
             notifyIcon.ShowBalloonTip(3000, "Whisper Window", $"Result：{translatedText}", ToolTipIcon.Info);
 
-            // 一段时间后隐藏 NotifyIcon  
+            // Hide NotifyIcon after a while
             System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
-            timer.Interval = 4000; // 4 秒后隐藏  
+            timer.Interval = 4000;
             timer.Tick += (s, e) =>
             {
                 notifyIcon.Visible = false;
@@ -527,41 +643,28 @@ namespace whisper_windows
 
         private void textBox1_TextChanged(object sender, EventArgs e)
         {
-            //TextBox textBox1 = sender as TextBox;
-
-            //if (textBox != null)
-            //{
-            // 选择所有文本
-            //textBox.SelectAll();
-
-            // 复制到剪贴板
-            //Clipboard.SetText(textBox1.Text);
-
-                // 可选：提供用户反馈
-                //MessageBox.Show("文本已复制到剪切板！");
-            //}
         }
 
 
         private void textBox1_Click(object? sender, EventArgs e)
         {
             TextBox textBox1 = sender as TextBox;
-            if (textBox1 != null && !string.IsNullOrEmpty(textBox1.Text)) // 检查 textBox1 和 textBox1.Text 是否为 null 或空
+            if (textBox1 != null && !string.IsNullOrEmpty(textBox1.Text))
             {
                 textBox1.SelectAll();
                 try
                 {
-                    Clipboard.SetText(textBox1.Text); // 尝试将文本设置到剪贴板
+                    Clipboard.SetText(textBox1.Text);
                     PlaySound("whisper_windows.Resources.copy.wav");
                 }
                 catch (ArgumentNullException)
                 {
-                    Console.WriteLine("Failed to set text to clipboard. Text is null."); // 在控制台输出错误信息
+                    Console.WriteLine("Failed to set text to clipboard. Text is null.");
                 }
             }
             else
             {
-                Console.WriteLine("TextBox is null or text is empty."); // 在控制台输出错误信息
+                Console.WriteLine("TextBox is null or text is empty.");
             }
         }
 
