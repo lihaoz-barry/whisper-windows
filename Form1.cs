@@ -63,10 +63,18 @@ namespace whisper_windows
         private AudioFileReader audioFileReader = null;
         private string outputFileName = "recorded.wav";
         private Boolean isRecording ;
-        
+
         // 系统托盘
         private NotifyIcon trayIcon;
         private ContextMenuStrip trayMenu;
+
+        // 重试功能相关 / Retry functionality
+        private string cachedAudioFilePath = null;
+        private string lastErrorMessage = null;
+        private bool hasFailedTranscription = false;
+        private static readonly string CacheDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WhisperWindows", "FailedAudioCache");
         public Form1()
         {
             InitializeComponent();
@@ -83,7 +91,15 @@ namespace whisper_windows
 
             this.Controls.Add(textBox1);
 
-            
+            // 初始化重试按钮 / Initialize retry button
+            InitializeRetryButton();
+
+            // 确保缓存目录存在 / Ensure cache directory exists
+            EnsureCacheDirectoryExists();
+
+            // 检查是否有缓存的失败音频 / Check for cached failed audio
+            CheckForCachedFailedAudio();
+
             // 初始化系统托盘
             InitializeTrayIcon();
             
@@ -125,15 +141,19 @@ namespace whisper_windows
             
             var settingsItem = new ToolStripMenuItem("设置...");
             settingsItem.Click += (s, e) => OpenSettings();
-            
+
+            var clearCacheItem = new ToolStripMenuItem("清除失败音频缓存");
+            clearCacheItem.Click += (s, e) => ClearFailedAudioCache();
+
             var exitItem = new ToolStripMenuItem("退出");
             exitItem.Click += (s, e) => {
                 trayIcon.Visible = false;
                 Application.Exit();
             };
-            
+
             trayMenu.Items.Add(showItem);
             trayMenu.Items.Add(settingsItem);
+            trayMenu.Items.Add(clearCacheItem);
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add(exitItem);
             
@@ -396,10 +416,11 @@ namespace whisper_windows
         private async Task HandleSegmentedAudio(string filePath)
         {
             List<AudioSegment> segments = null;
+            bool hasError = false;
             try
             {
                 // Segment the audio
-                textBox1.Text = "Segmenting audio...";
+                textBox1.Text = "正在分段音频...\nSegmenting audio...";
                 segments = AudioSegmenter.SegmentAudio(filePath);
 
                 if (segments.Count == 0)
@@ -414,18 +435,31 @@ namespace whisper_windows
                 for (int i = 0; i < segments.Count; i++)
                 {
                     var segment = segments[i];
-                    textBox1.Text = $"Transcribing part {segment.SegmentNumber}/{segment.TotalSegments}...";
+                    textBox1.Text = $"正在转录第 {segment.SegmentNumber}/{segment.TotalSegments} 段...\nTranscribing part {segment.SegmentNumber}/{segment.TotalSegments}...";
                     this.Refresh();
 
                     string transcription = await SendSingleAudioSegment(segment.FilePath, segment);
-                    if (!string.IsNullOrEmpty(transcription))
+                    if (string.IsNullOrEmpty(transcription))
                     {
-                        allTranscriptions.Add(transcription);
+                        // 分段转录失败，缓存原始文件 / Segment transcription failed, cache original file
+                        hasError = true;
+                        CacheAndShowRetryOption(filePath, $"分段 {segment.SegmentNumber} 转录失败，请重试\nSegment {segment.SegmentNumber} transcription failed, please retry");
+                        return;
                     }
+                    allTranscriptions.Add(transcription);
                 }
 
                 // Merge results
                 string finalText = string.Join(" ", allTranscriptions);
+
+                // 成功后清除之前的缓存 / Clear previous cache on success
+                if (!string.IsNullOrEmpty(cachedAudioFilePath))
+                {
+                    ClearCachedFile(cachedAudioFilePath);
+                    cachedAudioFilePath = null;
+                }
+                HideRetryOption();
+
                 textBox1.Text = finalText;
                 Clipboard.SetText(finalText);
                 PlaySound("whisper_windows.Resources.copy.wav");
@@ -434,9 +468,8 @@ namespace whisper_windows
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to process segmented audio: {ex.Message}", "错误",
-                              MessageBoxButtons.OK,
-                              MessageBoxIcon.Error);
+                hasError = true;
+                CacheAndShowRetryOption(filePath, $"处理分段音频失败: {ex.Message}\nFailed to process segmented audio: {ex.Message}");
             }
             finally
             {
@@ -457,13 +490,13 @@ namespace whisper_windows
 
                 if (string.IsNullOrEmpty(apiKey))
                 {
-                    MessageBox.Show("API Token 未配置，请在设置中配置", "错误",
-                                  MessageBoxButtons.OK,
-                                  MessageBoxIcon.Error);
+                    // 缓存音频文件以便重试 / Cache audio file for retry
+                    CacheAndShowRetryOption(filePath, "API Token 未配置，请在设置中配置\nAPI Token not configured");
                     return null;
                 }
 
                 client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+                client.Timeout = TimeSpan.FromMinutes(5); // 增加超时时间 / Increase timeout
 
                 var content = new MultipartFormDataContent();
                 var fileContent = new ByteArrayContent(File.ReadAllBytes(filePath));
@@ -477,12 +510,27 @@ namespace whisper_windows
                     var response = await client.PostAsync("https://api.openai.com/v1/audio/transcriptions", content);
                     var resultText = await response.Content.ReadAsStringAsync();
 
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        // API 返回错误，缓存并显示重试选项 / API returned error, cache and show retry
+                        CacheAndShowRetryOption(filePath, $"API 错误 ({response.StatusCode}): {resultText}\nAPI Error ({response.StatusCode}): {resultText}");
+                        return null;
+                    }
+
                     var jsonDocument = System.Text.Json.JsonDocument.Parse(resultText);
                     var text = jsonDocument.RootElement.GetProperty("text").GetString();
 
                     // For single segment, display immediately
                     if (segment == null)
                     {
+                        // 成功后清除之前的缓存 / Clear previous cache on success
+                        if (!string.IsNullOrEmpty(cachedAudioFilePath))
+                        {
+                            ClearCachedFile(cachedAudioFilePath);
+                            cachedAudioFilePath = null;
+                        }
+                        HideRetryOption();
+
                         textBox1.Text = text;
                         Clipboard.SetText(text);
                         PlaySound("whisper_windows.Resources.copy.wav");
@@ -492,14 +540,36 @@ namespace whisper_windows
 
                     return text;
                 }
+                catch (TaskCanceledException)
+                {
+                    CacheAndShowRetryOption(filePath, "请求超时，请点击重试按钮\nRequest timed out, click Retry");
+                    return null;
+                }
+                catch (HttpRequestException ex)
+                {
+                    CacheAndShowRetryOption(filePath, $"网络错误: {ex.Message}\nNetwork error: {ex.Message}");
+                    return null;
+                }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Failed to transcribe: {ex.Message}", "错误",
-                                  MessageBoxButtons.OK,
-                                  MessageBoxIcon.Error);
+                    CacheAndShowRetryOption(filePath, $"转录失败: {ex.Message}\nTranscription failed: {ex.Message}");
                     return null;
                 }
             }
+        }
+
+        /// <summary>
+        /// 缓存失败的音频并显示重试选项 / Cache failed audio and show retry option
+        /// </summary>
+        private void CacheAndShowRetryOption(string filePath, string errorMessage)
+        {
+            // 缓存音频文件 / Cache the audio file
+            string cached = CacheFailedAudio(filePath);
+            if (cached != null)
+            {
+                cachedAudioFilePath = cached;
+            }
+            ShowRetryOption(errorMessage);
         }
 
         private void showBalloonTip(string translatedText)
@@ -569,6 +639,355 @@ namespace whisper_windows
         {
             OpenSettings();
         }
+
+        #region Retry Functionality / 重试功能
+
+        /// <summary>
+        /// 初始化重试按钮 / Initialize retry button
+        /// </summary>
+        private void InitializeRetryButton()
+        {
+            retryButton.Visible = false;
+            retryButton.Click += retryButton_Click;
+        }
+
+        /// <summary>
+        /// 确保缓存目录存在 / Ensure cache directory exists
+        /// </summary>
+        private void EnsureCacheDirectoryExists()
+        {
+            if (!Directory.Exists(CacheDirectory))
+            {
+                Directory.CreateDirectory(CacheDirectory);
+            }
+        }
+
+        /// <summary>
+        /// 检查是否有缓存的失败音频 / Check for cached failed audio on startup
+        /// </summary>
+        private void CheckForCachedFailedAudio()
+        {
+            try
+            {
+                if (Directory.Exists(CacheDirectory))
+                {
+                    var cachedFiles = Directory.GetFiles(CacheDirectory, "*.wav");
+                    if (cachedFiles.Length > 0)
+                    {
+                        // 使用最新的缓存文件 / Use the most recent cached file
+                        cachedAudioFilePath = cachedFiles.OrderByDescending(f => File.GetCreationTime(f)).First();
+                        hasFailedTranscription = true;
+                        ShowRetryOption($"发现上次失败的录音，点击重试按钮重新转录\nFound previous failed recording, click Retry to transcribe again");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error checking cached audio: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 缓存失败的音频文件 / Cache failed audio file
+        /// </summary>
+        private string CacheFailedAudio(string sourceFilePath)
+        {
+            try
+            {
+                EnsureCacheDirectoryExists();
+
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string cachedFileName = $"failed_audio_{timestamp}.wav";
+                string cachedFilePath = Path.Combine(CacheDirectory, cachedFileName);
+
+                // 复制文件到缓存目录 / Copy file to cache directory
+                File.Copy(sourceFilePath, cachedFilePath, true);
+
+                return cachedFilePath;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to cache audio file: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 显示重试选项 / Show retry option
+        /// </summary>
+        private void ShowRetryOption(string errorMessage)
+        {
+            hasFailedTranscription = true;
+            lastErrorMessage = errorMessage;
+            retryButton.Visible = true;
+            textBox1.Text = errorMessage;
+            textBox1.ForeColor = System.Drawing.Color.Red;
+        }
+
+        /// <summary>
+        /// 隐藏重试选项 / Hide retry option
+        /// </summary>
+        private void HideRetryOption()
+        {
+            hasFailedTranscription = false;
+            lastErrorMessage = null;
+            retryButton.Visible = false;
+            textBox1.ForeColor = System.Drawing.SystemColors.WindowText;
+        }
+
+        /// <summary>
+        /// 重试按钮点击事件 / Retry button click handler
+        /// </summary>
+        private async void retryButton_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(cachedAudioFilePath) || !File.Exists(cachedAudioFilePath))
+            {
+                MessageBox.Show("缓存的音频文件不存在\nCached audio file not found", "错误",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                HideRetryOption();
+                return;
+            }
+
+            // 禁用重试按钮防止重复点击 / Disable retry button to prevent double clicks
+            retryButton.Enabled = false;
+            textBox1.Text = "正在重试转录...\nRetrying transcription...";
+            textBox1.ForeColor = System.Drawing.SystemColors.WindowText;
+
+            try
+            {
+                bool success = await RetryTranscription(cachedAudioFilePath);
+                if (success)
+                {
+                    // 成功后清除缓存 / Clear cache on success
+                    ClearCachedFile(cachedAudioFilePath);
+                    cachedAudioFilePath = null;
+                    HideRetryOption();
+                }
+            }
+            finally
+            {
+                retryButton.Enabled = true;
+            }
+        }
+
+        /// <summary>
+        /// 重试转录 / Retry transcription
+        /// </summary>
+        private async Task<bool> RetryTranscription(string filePath)
+        {
+            try
+            {
+                // 检查是否需要分段 / Check if segmentation is needed
+                if (AudioSegmenter.NeedsSegmentation(filePath))
+                {
+                    return await RetrySegmentedAudio(filePath);
+                }
+                else
+                {
+                    return await RetrySingleAudioSegment(filePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowRetryOption($"重试失败: {ex.Message}\nRetry failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 重试分段音频转录 / Retry segmented audio transcription
+        /// </summary>
+        private async Task<bool> RetrySegmentedAudio(string filePath)
+        {
+            List<AudioSegment> segments = null;
+            try
+            {
+                textBox1.Text = "正在分段音频...\nSegmenting audio...";
+                segments = AudioSegmenter.SegmentAudio(filePath);
+
+                if (segments.Count == 0)
+                {
+                    return await RetrySingleAudioSegment(filePath);
+                }
+
+                List<string> allTranscriptions = new List<string>();
+
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    var segment = segments[i];
+                    textBox1.Text = $"正在转录第 {segment.SegmentNumber}/{segment.TotalSegments} 段...\nTranscribing part {segment.SegmentNumber}/{segment.TotalSegments}...";
+                    this.Refresh();
+
+                    string transcription = await SendAudioForTranscription(segment.FilePath);
+                    if (transcription == null)
+                    {
+                        ShowRetryOption($"分段 {segment.SegmentNumber} 转录失败\nSegment {segment.SegmentNumber} transcription failed");
+                        return false;
+                    }
+                    allTranscriptions.Add(transcription);
+                }
+
+                string finalText = string.Join(" ", allTranscriptions);
+                OnTranscriptionSuccess(finalText);
+                return true;
+            }
+            finally
+            {
+                if (segments != null)
+                {
+                    AudioSegmenter.CleanupSegments(segments);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 重试单个音频转录 / Retry single audio transcription
+        /// </summary>
+        private async Task<bool> RetrySingleAudioSegment(string filePath)
+        {
+            string transcription = await SendAudioForTranscription(filePath);
+            if (transcription != null)
+            {
+                OnTranscriptionSuccess(transcription);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 发送音频进行转录 / Send audio for transcription
+        /// </summary>
+        private async Task<string> SendAudioForTranscription(string filePath)
+        {
+            using (var client = new HttpClient())
+            {
+                string apiKey = TokenManager.GetDecryptedToken();
+
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    ShowRetryOption("API Token 未配置\nAPI Token not configured");
+                    return null;
+                }
+
+                client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+                client.Timeout = TimeSpan.FromMinutes(5); // 增加超时时间 / Increase timeout
+
+                var content = new MultipartFormDataContent();
+                var fileContent = new ByteArrayContent(File.ReadAllBytes(filePath));
+                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
+
+                content.Add(fileContent, "file", Path.GetFileName(filePath));
+                content.Add(new StringContent("whisper-1"), "model");
+
+                try
+                {
+                    var response = await client.PostAsync("https://api.openai.com/v1/audio/transcriptions", content);
+                    var resultText = await response.Content.ReadAsStringAsync();
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string errorMsg = $"API 错误 ({response.StatusCode}): {resultText}\nAPI Error ({response.StatusCode}): {resultText}";
+                        ShowRetryOption(errorMsg);
+                        return null;
+                    }
+
+                    var jsonDocument = System.Text.Json.JsonDocument.Parse(resultText);
+                    return jsonDocument.RootElement.GetProperty("text").GetString();
+                }
+                catch (TaskCanceledException)
+                {
+                    ShowRetryOption("请求超时，请重试\nRequest timed out, please retry");
+                    return null;
+                }
+                catch (HttpRequestException ex)
+                {
+                    ShowRetryOption($"网络错误: {ex.Message}\nNetwork error: {ex.Message}");
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    ShowRetryOption($"转录失败: {ex.Message}\nTranscription failed: {ex.Message}");
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 转录成功处理 / Handle transcription success
+        /// </summary>
+        private void OnTranscriptionSuccess(string text)
+        {
+            textBox1.Text = text;
+            textBox1.ForeColor = System.Drawing.SystemColors.WindowText;
+            Clipboard.SetText(text);
+            PlaySound("whisper_windows.Resources.copy.wav");
+            FlashWindow(this);
+            showBalloonTip(text);
+        }
+
+        /// <summary>
+        /// 清除单个缓存文件 / Clear single cached file
+        /// </summary>
+        private void ClearCachedFile(string filePath)
+        {
+            try
+            {
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to delete cached file: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 清除所有失败音频缓存 / Clear all failed audio cache
+        /// </summary>
+        private void ClearFailedAudioCache()
+        {
+            try
+            {
+                if (Directory.Exists(CacheDirectory))
+                {
+                    var files = Directory.GetFiles(CacheDirectory, "*.wav");
+                    int deletedCount = 0;
+
+                    foreach (var file in files)
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                            deletedCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to delete {file}: {ex.Message}");
+                        }
+                    }
+
+                    cachedAudioFilePath = null;
+                    HideRetryOption();
+
+                    MessageBox.Show($"已清除 {deletedCount} 个缓存文件\nCleared {deletedCount} cached files",
+                        "缓存已清除", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("没有缓存文件需要清除\nNo cached files to clear",
+                        "缓存为空", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"清除缓存失败: {ex.Message}\nFailed to clear cache: {ex.Message}",
+                    "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        #endregion
 
     }
 }

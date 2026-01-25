@@ -39,6 +39,7 @@
             this.label1 = new System.Windows.Forms.Label();
             this.fileSystemWatcher1 = new System.IO.FileSystemWatcher();
             this.settingsButton = new System.Windows.Forms.Button();
+            this.retryButton = new System.Windows.Forms.Button();
             this.flowLayoutPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.fileSystemWatcher1)).BeginInit();
             this.SuspendLayout();
@@ -81,9 +82,9 @@
             this.flowLayoutPanel1.Size = new System.Drawing.Size(159, 54);
             this.flowLayoutPanel1.TabIndex = 4;
             // 
-            // 
+            //
             // settingsButton
-            // 
+            //
             this.settingsButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.settingsButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.settingsButton.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point);
@@ -94,7 +95,22 @@
             this.settingsButton.Text = "⚙";
             this.settingsButton.UseVisualStyleBackColor = true;
             this.settingsButton.Click += new System.EventHandler(this.settingsButton_Click);
-            // 
+            //
+            // retryButton
+            //
+            this.retryButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.retryButton.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(128)))), ((int)(((byte)(128)))));
+            this.retryButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.retryButton.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
+            this.retryButton.ForeColor = System.Drawing.Color.White;
+            this.retryButton.Location = new System.Drawing.Point(8, 8);
+            this.retryButton.Name = "retryButton";
+            this.retryButton.Size = new System.Drawing.Size(60, 30);
+            this.retryButton.TabIndex = 6;
+            this.retryButton.Text = "重试";
+            this.retryButton.UseVisualStyleBackColor = false;
+            this.retryButton.Visible = false;
+            //
             // label1
             // 
             this.label1.AutoSize = true;
@@ -117,6 +133,7 @@
             this.ClientSize = new System.Drawing.Size(384, 161);
             this.Controls.Add(this.flowLayoutPanel1);
             this.Controls.Add(this.settingsButton);
+            this.Controls.Add(this.retryButton);
             this.Controls.Add(this.textBox1);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "Form1";
@@ -137,5 +154,6 @@
         private Label label1;
         private FileSystemWatcher fileSystemWatcher1;
         private Button settingsButton;
+        private Button retryButton;
     }
 }
