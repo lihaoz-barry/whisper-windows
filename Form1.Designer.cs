@@ -39,6 +39,7 @@
             this.label1 = new System.Windows.Forms.Label();
             this.fileSystemWatcher1 = new System.IO.FileSystemWatcher();
             this.settingsButton = new System.Windows.Forms.Button();
+            this.retryButton = new System.Windows.Forms.Button();
             this.flowLayoutPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.fileSystemWatcher1)).BeginInit();
             this.SuspendLayout();
@@ -109,14 +110,31 @@
             // 
             this.fileSystemWatcher1.EnableRaisingEvents = true;
             this.fileSystemWatcher1.SynchronizingObject = this;
-            // 
+            //
+            // retryButton
+            //
+            this.retryButton.BackColor = System.Drawing.Color.FromArgb(255, 128, 0);
+            this.retryButton.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.retryButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.retryButton.ForeColor = System.Drawing.Color.White;
+            this.retryButton.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point);
+            this.retryButton.Location = new System.Drawing.Point(0, 67);
+            this.retryButton.Name = "retryButton";
+            this.retryButton.Size = new System.Drawing.Size(384, 30);
+            this.retryButton.TabIndex = 6;
+            this.retryButton.Text = "⟳ 重试转录 / Retry Transcription";
+            this.retryButton.UseVisualStyleBackColor = false;
+            this.retryButton.Visible = false;
+            this.retryButton.Click += new System.EventHandler(this.retryButton_Click);
+            //
             // Form1
-            // 
+            //
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(384, 161);
+            this.ClientSize = new System.Drawing.Size(384, 191);
             this.Controls.Add(this.flowLayoutPanel1);
             this.Controls.Add(this.settingsButton);
+            this.Controls.Add(this.retryButton);
             this.Controls.Add(this.textBox1);
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "Form1";
@@ -137,5 +155,6 @@
         private Label label1;
         private FileSystemWatcher fileSystemWatcher1;
         private Button settingsButton;
+        private Button retryButton;
     }
 }
