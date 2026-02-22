@@ -63,15 +63,20 @@ namespace whisper_windows
         private AudioFileReader audioFileReader = null;
         private string outputFileName = "recorded.wav";
         private Boolean isRecording ;
+
+        // Recording history & retry
+        private StorageManager storageManager;
+        private RecordingHistoryItem? lastFailedRecording;
         
         // 系统托盘
-        private NotifyIcon trayIcon;
-        private ContextMenuStrip trayMenu;
+        private NotifyIcon trayIcon = null!;
+        private ContextMenuStrip trayMenu = null!;
         public Form1()
         {
             InitializeComponent();
             RegisterHotKey(this.Handle, MYACTION_HOTKEY_ID, 0x2, (int)Keys.M);  // 0x2 代表 Ctrl
             isRecording = false;
+            storageManager = new StorageManager();
             // 初始化计时器
             timer1 = new System.Windows.Forms.Timer();
             timer1.Interval = 1000; // 设置时间间隔为1秒
@@ -128,6 +133,7 @@ namespace whisper_windows
             
             var exitItem = new ToolStripMenuItem("退出");
             exitItem.Click += (s, e) => {
+                storageManager.CleanupOldRecordings();
                 trayIcon.Visible = false;
                 Application.Exit();
             };
@@ -269,7 +275,10 @@ namespace whisper_windows
                 MessageBox.Show("请先在设置中配置 API Token", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            
+
+            // Use StorageManager for organized file storage
+            outputFileName = storageManager.GetNewRecordingPath();
+
             waveSource = new WaveIn();
             waveSource.WaveFormat = new WaveFormat(44100, 1); // CD quality audio
 
@@ -288,6 +297,9 @@ namespace whisper_windows
             }
 
             waveSource.StartRecording();
+
+            // Cleanup old recordings (keep max 3)
+            storageManager.CleanupOldRecordings();
         }
 
         private void EnsureFileIsNotLocked(string filePath)
@@ -375,6 +387,9 @@ namespace whisper_windows
         {
             try
             {
+                // Hide retry button when starting a new transcription
+                retryButton.Visible = false;
+
                 // Check if audio needs segmentation
                 if (AudioSegmenter.NeedsSegmentation(filePath))
                 {
@@ -387,10 +402,37 @@ namespace whisper_windows
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to process audio: {ex.Message}", "错误",
-                              MessageBoxButtons.OK,
-                              MessageBoxIcon.Error);
+                HandleTranscriptionFailure(filePath, ex.Message);
             }
+        }
+
+        private void HandleTranscriptionFailure(string filePath, string errorMessage)
+        {
+            lastFailedRecording = new RecordingHistoryItem
+            {
+                FilePath = filePath,
+                RecordedAt = DateTime.Now,
+                TranscriptionText = string.Empty, // Added default value
+                TranscriptionFailed = true,
+                ErrorMessage = errorMessage
+            };
+
+            textBox1.Text = $"转录失败 / Transcription failed: {errorMessage}";
+            retryButton.Visible = true;
+        }
+
+        private void retryButton_Click(object sender, EventArgs e)
+        {
+            if (lastFailedRecording == null || !File.Exists(lastFailedRecording.FilePath))
+            {
+                MessageBox.Show("没有可重试的录音文件 / No recording available for retry", "提示",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                retryButton.Visible = false;
+                return;
+            }
+
+            textBox1.Text = "正在重试转录... / Retrying transcription...";
+            SendAudioToWhisperAPI(lastFailedRecording.FilePath);
         }
 
         private async Task HandleSegmentedAudio(string filePath)
@@ -431,12 +473,15 @@ namespace whisper_windows
                 PlaySound("whisper_windows.Resources.copy.wav");
                 FlashWindow(this);
                 showBalloonTip(finalText);
+
+                // Save transcription result and clear failure state
+                storageManager.SaveTranscriptionResult(filePath, finalText);
+                lastFailedRecording = null;
+                retryButton.Visible = false;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to process segmented audio: {ex.Message}", "错误",
-                              MessageBoxButtons.OK,
-                              MessageBoxIcon.Error);
+                HandleTranscriptionFailure(filePath, ex.Message);
             }
             finally
             {
@@ -477,6 +522,11 @@ namespace whisper_windows
                     var response = await client.PostAsync("https://api.openai.com/v1/audio/transcriptions", content);
                     var resultText = await response.Content.ReadAsStringAsync();
 
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        throw new HttpRequestException($"API returned {(int)response.StatusCode}: {resultText}");
+                    }
+
                     var jsonDocument = System.Text.Json.JsonDocument.Parse(resultText);
                     var text = jsonDocument.RootElement.GetProperty("text").GetString();
 
@@ -488,15 +538,22 @@ namespace whisper_windows
                         PlaySound("whisper_windows.Resources.copy.wav");
                         FlashWindow(this);
                         showBalloonTip(text);
+
+                        // Save transcription result and clear failure state
+                        storageManager.SaveTranscriptionResult(filePath, text);
+                        lastFailedRecording = null;
+                        retryButton.Visible = false;
                     }
 
                     return text;
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Failed to transcribe: {ex.Message}", "错误",
-                                  MessageBoxButtons.OK,
-                                  MessageBoxIcon.Error);
+                    // For single segment (not part of multi-segment), show retry
+                    if (segment == null)
+                    {
+                        HandleTranscriptionFailure(filePath, ex.Message);
+                    }
                     return null;
                 }
             }

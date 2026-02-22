@@ -17,8 +17,23 @@
 	  <RuntimeIdentifier>win-x64</RuntimeIdentifier>
 	  <AssemblyVersion>0.2.0.0</AssemblyVersion>
 	  <FileVersion>0.2.0.0</FileVersion>
-	  <InformationalVersion>0.2.0</InformationalVersion>
   </PropertyGroup>
+
+  <Target Name="SetSourceRevisionId" BeforeTargets="GetAssemblyAttributes">
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="MyRawHash" />
+    </Exec>
+    <Exec Command="git status --porcelain" ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="MyGitStatus" />
+    </Exec>
+    <PropertyGroup>
+      <!-- 确保只取第一行，防止环境中有重复输出 -->
+      <MyCleanHash>$(MyRawHash.Trim().Split(';')[0].Split(' ')[0])</MyCleanHash>
+      <MyCleanHash Condition="'$(MyCleanHash)' == ''">Unknown</MyCleanHash>
+      <MyDirty Condition="'$(MyGitStatus)' != ''">*</MyDirty>
+      <InformationalVersion>$(AssemblyVersion)+$(MyCleanHash)$(MyDirty)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
 
   <ItemGroup>
     <None Remove="Resources\copy.wav" />

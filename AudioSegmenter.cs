@@ -9,7 +9,7 @@ namespace whisper_windows
     {
         public int SegmentNumber { get; set; }
         public int TotalSegments { get; set; }
-        public string FilePath { get; set; }
+        public string FilePath { get; set; } = string.Empty;
         public TimeSpan Duration { get; set; }
     }
 
