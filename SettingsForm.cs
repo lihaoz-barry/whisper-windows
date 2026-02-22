@@ -2,21 +2,25 @@
 using System.Drawing;
 using System.Net.Http;
 using System.Windows.Forms;
+using System.Reflection;
+using System.Diagnostics;
 
 namespace whisper_windows
 {
     public partial class SettingsForm : Form
     {
-        private Label titleLabel;
-        private Label instructionLabel;
-        private Label currentTokenLabel;
-        private Label currentTokenValue;
-        private Label newTokenLabel;
-        private TextBox tokenTextBox;
-        private Button testButton;
-        private Button saveButton;
-        private Button cancelButton;
-        private Label statusLabel;
+        private Label titleLabel = null!;
+        private Label instructionLabel = null!;
+        private Label currentTokenLabel = null!;
+        private Label currentTokenValue = null!;
+        private Label newTokenLabel = null!;
+        private TextBox tokenTextBox = null!;
+        private Button testButton = null!;
+        private Button saveButton = null!;
+        private Button cancelButton = null!;
+        private Label statusLabel = null!;
+        private Label versionLabel = null!;
+        private LinkLabel commitLink = null!;
 
         public SettingsForm()
         {
@@ -29,7 +33,7 @@ namespace whisper_windows
         {
             // 窗体基本属性
             this.Width = 500;
-            this.Height = 350;
+            this.Height = 420;
             this.Text = "设置 - Whisper Windows";
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterParent;
@@ -133,6 +137,59 @@ namespace whisper_windows
             statusLabel.Size = new Size(450, 40);
             statusLabel.ForeColor = Color.FromArgb(0, 120, 0);
             this.Controls.Add(statusLabel);
+            currentY += 45;
+
+            // 分隔线
+            Label separator = new Label();
+            separator.BorderStyle = BorderStyle.Fixed3D;
+            separator.Height = 2;
+            separator.Width = 450;
+            separator.Location = new Point(leftMargin, currentY);
+            this.Controls.Add(separator);
+            currentY += 15;
+
+            // 版本信息
+            string informationalVersion = Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion ?? "v0.2.0+Unknown";
+
+            string[] versionParts = informationalVersion.Split('+');
+            string versionNum = versionParts[0];
+            string commitHash = versionParts.Length > 1 ? versionParts[1] : "Unknown";
+
+            versionLabel = new Label();
+            versionLabel.Text = $"Whisper Windows {versionNum}";
+            versionLabel.Font = new Font("Microsoft YaHei UI", 8F);
+            versionLabel.ForeColor = Color.Gray;
+            versionLabel.Location = new Point(leftMargin, currentY);
+            versionLabel.AutoSize = true;
+            this.Controls.Add(versionLabel);
+
+            commitLink = new LinkLabel();
+            commitLink.Text = $"Commit: {commitHash}";
+            commitLink.Font = new Font("Consolas", 8F);
+            commitLink.Location = new Point(leftMargin + 180, currentY);
+            commitLink.AutoSize = true;
+            commitLink.LinkColor = Color.FromArgb(0, 120, 212);
+            commitLink.LinkClicked += (s, e) => {
+                // 1. 净化字符
+                string hash = System.Text.RegularExpressions.Regex.Replace(commitHash, @"[^a-zA-Z0-9]", "");
+                
+                // 2. 防御性处理：如果 Hash 因为编译环境重复了 (例如 539da19539da19)，则切半
+                if (hash.Length == 14 && hash.Substring(0, 7) == hash.Substring(7))
+                {
+                    hash = hash.Substring(0, 7);
+                }
+
+                if (hash != "Unknown" && !string.IsNullOrEmpty(hash))
+                {
+                    Process.Start(new ProcessStartInfo {
+                        FileName = $"https://github.com/lihaoz-barry/whisper-windows/commit/{hash}",
+                        UseShellExecute = true
+                    });
+                }
+            };
+            this.Controls.Add(commitLink);
         }
 
         private void LoadCurrentToken()

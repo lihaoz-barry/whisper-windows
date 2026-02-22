@@ -66,11 +66,11 @@ namespace whisper_windows
 
         // Recording history & retry
         private StorageManager storageManager;
-        private RecordingHistoryItem lastFailedRecording;
+        private RecordingHistoryItem? lastFailedRecording;
         
         // 系统托盘
-        private NotifyIcon trayIcon;
-        private ContextMenuStrip trayMenu;
+        private NotifyIcon trayIcon = null!;
+        private ContextMenuStrip trayMenu = null!;
         public Form1()
         {
             InitializeComponent();
@@ -412,6 +412,7 @@ namespace whisper_windows
             {
                 FilePath = filePath,
                 RecordedAt = DateTime.Now,
+                TranscriptionText = string.Empty, // Added default value
                 TranscriptionFailed = true,
                 ErrorMessage = errorMessage
             };
